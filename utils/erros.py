@@ -44,9 +44,10 @@ def registrar_erro(erro, contexto=""):
 
 
 MENSAGENS_MYSQL = {
-    1045: "Usuário ou senha do MySQL incorretos. Confira o arquivo .env.",
+    1044: "O usuário do MySQL não tem permissão neste banco.",
     1049: "O banco de dados não existe. Confira o DB_NAME no arquivo .env.",
     1054: "Uma coluna esperada não existe no banco. O script SQL está atualizado?",
+    1142: "O usuário do MySQL não tem permissão para esta operação.",
     1146: "Uma tabela ou view não existe no banco. Rode o script SQL de criação.",
     1451: "Não é possível excluir: há registros ligados a este item.",
     1452: "O registro depende de outro que não existe.",
@@ -65,6 +66,12 @@ def mensagem_amigavel(erro):
             if "codigo_barras" in str(erro):
                 return "Já existe um produto com esse código de barras."
             return "Já existe um registro com esse valor único."
+        if codigo == 1045:
+            if "using password: NO" in str(erro):
+                return ("Nenhuma senha foi enviada ao MySQL: o arquivo .env "
+                        "não foi encontrado ou o DB_PASSWORD está vazio.")
+            return ("Usuário ou senha do MySQL incorretos. "
+                    "Confira o DB_USER e o DB_PASSWORD no arquivo .env.")
         if codigo in MENSAGENS_MYSQL:
             return MENSAGENS_MYSQL[codigo]
         return "Erro no banco de dados. Os detalhes foram gravados em logs/erros.log."

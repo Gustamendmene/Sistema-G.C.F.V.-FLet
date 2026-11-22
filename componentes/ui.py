@@ -1,10 +1,13 @@
 """Peças de interface reutilizadas por várias telas."""
-import inspect
-
 import flet as ft
 
-from tema import AZUL_ESCURO, BRANCO, TEXTO_SUAVE
-from utils.erros import registrar_erro
+from tema import BRANCO, PRETO, TEXTO_SUAVE
+
+
+def botao(texto, on_click, icon=None, cor=PRETO):
+    """Botão cheio (padrão: preto com texto branco)."""
+    return ft.Button(texto, icon=icon, on_click=on_click,
+                     style=ft.ButtonStyle(bgcolor=cor, color=BRANCO))
 
 
 def etiqueta(texto, cor):
@@ -24,7 +27,7 @@ def criar_cartao(titulo, valor, icone, cor):
                 ft.Icon(icone, color=cor, size=28),
                 ft.Text(titulo, size=13, color=TEXTO_SUAVE),
                 ft.Text(str(valor), size=26, weight=ft.FontWeight.BOLD,
-                        color=AZUL_ESCURO),
+                        color=PRETO),
             ],
             spacing=8,
         ),
@@ -36,8 +39,7 @@ def criar_cartao(titulo, valor, icone, cor):
 
 
 def titulo_coluna(texto):
-    return ft.DataColumn(
-        ft.Text(texto, weight=ft.FontWeight.BOLD, color=AZUL_ESCURO))
+    return ft.DataColumn(ft.Text(texto, weight=ft.FontWeight.BOLD, color=PRETO))
 
 
 def celula(conteudo):
@@ -74,7 +76,7 @@ def cabecalho(titulo, subtitulo, sino):
             ft.Column(
                 controls=[
                     ft.Text(titulo, size=25, weight=ft.FontWeight.BOLD,
-                            color=AZUL_ESCURO),
+                            color=PRETO),
                     ft.Text(subtitulo, color=TEXTO_SUAVE, size=13),
                 ],
                 spacing=4,
@@ -98,15 +100,3 @@ def fechar_dialogo(page, dialogo):
         page.pop_dialog()
     else:
         page.close(dialogo)
-
-
-def rolar_ao_topo(page, coluna):
-    """Rola a coluna até o topo. Nunca derruba o app se não for possível."""
-    try:
-        resultado = coluna.scroll_to(offset=0, duration=300)
-        if inspect.isawaitable(resultado):  # versões novas do Flet: async
-            async def _aguardar():
-                await resultado
-            page.run_task(_aguardar)
-    except Exception as erro:
-        registrar_erro(erro, "rolar ao topo")

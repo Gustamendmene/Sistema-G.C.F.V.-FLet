@@ -1,8 +1,8 @@
 """Regras dos alertas de validade e estoque (sem interface).
 
-Os dados vêm da view `alerta_estoque` do MySQL (via funcoes/estoque.py).
-Aqui eles são transformados em objetos `Alerta`, ordenados por gravidade
-e guardados em um cache curto para o sino não consultar o banco a cada clique.
+Os dados vêm da view `alerta_estoque` do MySQL (funcoes/estoque.py). Aqui viram
+objetos `Alerta`, ordenados por gravidade, e ficam num cache curto para o sino
+do cabeçalho não consultar o banco a cada clique.
 """
 import time
 from dataclasses import dataclass
@@ -10,52 +10,28 @@ from dataclasses import dataclass
 from funcoes.estoque import listar_alertas
 from utils.erros import mensagem_amigavel, registrar_erro
 
-# Tipos devolvidos pela view alerta_estoque
+# Tipos devolvidos pela view alerta_estoque, do mais grave ao menos grave
 VENCIDO = "VENCIDO"
 PROXIMO = "PRÓXIMO DO VENCIMENTO"
 BAIXO = "ESTOQUE BAIXO"
+_GRAVIDADE = {VENCIDO: 0, PROXIMO: 1, BAIXO: 2}
 
-DIAS_URGENTE = 3          # até quantos dias o "próximo do vencimento" vira URGENTE
-SEGUNDOS_EM_CACHE = 30    # validade do cache usado pelo sino do cabeçalho
-
-_ORDEM = {VENCIDO: 0, PROXIMO: 1, BAIXO: 2}
+SEGUNDOS_EM_CACHE = 30
 
 
 @dataclass(frozen=True)
 class Alerta:
+    """Uma linha da view alerta_estoque (os campos seguem a ordem das colunas)."""
     id_produto: int
     nome: str
-    validade: object      # date
-    dias: object          # int (negativo = já venceu) ou None
+    validade: object
+    dias: int          # negativo = já venceu
     quantidade: int
     minimo: int
     tipo: str
 
     @property
-    def urgente(self):
-        """Vencido, ou vencendo em até DIAS_URGENTE dias."""
-        if self.tipo == VENCIDO:
-            return True
-        return (self.tipo == PROXIMO and self.dias is not None
-                and self.dias <= DIAS_URGENTE)
-
-    @property
-    def rotulo(self):
-        """Texto curto para a etiqueta colorida."""
-        if self.tipo == VENCIDO:
-            return "VENCIDO"
-        if self.tipo == PROXIMO:
-            if self.dias == 0:
-                return "VENCE HOJE"
-            return "URGENTE" if self.urgente else "A VENCER"
-        if self.tipo == BAIXO:
-            return "ESTOQUE BAIXO"
-        return self.tipo or "-"
-
-    @property
     def prazo(self):
-        if self.dias is None:
-            return "-"
         if self.dias < 0:
             return f"venceu há {-self.dias} dia(s)"
         if self.dias == 0:
@@ -80,23 +56,11 @@ class ResultadoAlertas:
     def por_tipo(self, tipo):
         return [a for a in self.alertas if a.tipo == tipo]
 
-    @property
-    def urgentes(self):
-        return [a for a in self.alertas if a.urgente]
-
-
-def _converter(linha):
-    id_p, nome, validade, dias, qtd, minimo, tipo = linha
-    return Alerta(id_p, nome, validade,
-                  None if dias is None else int(dias), qtd, minimo, tipo)
-
 
 def obter_alertas():
-    """Consulta o banco; ordena por gravidade (vencidos primeiro) e depois por prazo."""
-    alertas = [_converter(linha) for linha in listar_alertas()]
-    alertas.sort(key=lambda a: (_ORDEM.get(a.tipo, 9),
-                                a.dias if a.dias is not None else 10**6,
-                                a.nome))
+    """Consulta o banco; vencidos primeiro e, dentro de cada tipo, o prazo mais curto."""
+    alertas = [Alerta(*linha) for linha in listar_alertas()]
+    alertas.sort(key=lambda a: (_GRAVIDADE.get(a.tipo, 9), a.dias, a.nome))
     return alertas
 
 

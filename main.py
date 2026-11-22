@@ -4,8 +4,9 @@ from pathlib import Path
 import flet as ft
 
 from componentes.alertas_ui import avisar_alertas_urgentes
-from telas import estoque, inicio, lotes, produtos, validade
-from tema import AZUL, AZUL_ESCURO, BRANCO, CINZA, TEXTO_SUAVE, VERMELHO
+from telas import estoque, inicio, produtos, validade
+from tema import (BRANCO, CINZA, MENU_ATIVO, MENU_LINHA, MENU_TEXTO_SUAVE,
+                  PRETO, TEXTO_SUAVE, VERMELHO)
 from utils.erros import registrar_erro
 
 PASTA_ASSETS = Path(__file__).resolve().parent / "assets"
@@ -15,7 +16,6 @@ PASTA_ASSETS = Path(__file__).resolve().parent / "assets"
 TELAS = {
     "inicio": inicio.criar_tela,
     "produtos": produtos.criar_tela,
-    "lotes": lotes.criar_tela,
     "estoque": estoque.criar_tela,
     "validade": validade.criar_tela,
 }
@@ -26,6 +26,7 @@ def main(page: ft.Page):
     page.bgcolor = CINZA
     page.padding = 0
     page.theme_mode = ft.ThemeMode.LIGHT
+    page.theme = ft.Theme(color_scheme=ft.ColorScheme(primary=PRETO))
     page.window.min_width = 800
     page.window.min_height = 600
 
@@ -47,7 +48,7 @@ def main(page: ft.Page):
     def mostrar(destino):
         """Troca a tela mostrada à direita e destaca o item do menu."""
         for chave, caixa in botoes_menu.items():
-            caixa.bgcolor = AZUL if chave == destino else None
+            caixa.bgcolor = MENU_ATIVO if chave == destino else None
         try:
             area.content = TELAS[destino](page, mostrar)
         except Exception as erro:  # uma tela com defeito não derruba o app
@@ -69,7 +70,7 @@ def main(page: ft.Page):
 
     menu = ft.Container(
         width=235,
-        bgcolor=AZUL_ESCURO,
+        bgcolor=PRETO,
         padding=18,
         content=ft.Column(
             controls=[
@@ -89,19 +90,18 @@ def main(page: ft.Page):
                     weight=ft.FontWeight.BOLD,
                     text_align=ft.TextAlign.CENTER,
                 ),
-                ft.Divider(color="#52749A"),
-                ft.Text("MENU PRINCIPAL", color="#BBD8F5", size=11,
+                ft.Divider(color=MENU_LINHA),
+                ft.Text("MENU PRINCIPAL", color=MENU_TEXTO_SUAVE, size=11,
                         weight=ft.FontWeight.BOLD),
                 item_menu("inicio", ft.Icons.DASHBOARD_OUTLINED, "Início"),
                 item_menu("produtos", ft.Icons.INVENTORY_2_OUTLINED,
                           "Produtos"),
-                item_menu("lotes", ft.Icons.LAYERS_OUTLINED, "Lotes"),
                 item_menu("estoque", ft.Icons.WAREHOUSE_OUTLINED, "Estoque"),
                 item_menu("validade", ft.Icons.CALENDAR_MONTH_OUTLINED,
                           "Validade"),
                 ft.Container(expand=True),
                 ft.Text("Sistema de Controle de Estoque",
-                        color="#BBD8F5", size=10),
+                        color=MENU_TEXTO_SUAVE, size=10),
             ],
             spacing=10,
             expand=True,
