@@ -1,4 +1,4 @@
-"""Tela padrão de consulta (cabeçalho + tabela), usada por Lotes e Estoque."""
+"""Tela padrão de consulta (cabeçalho + tabela), usada por Estoque e Validade."""
 import flet as ft
 
 from componentes.alertas_ui import Sino
@@ -19,7 +19,7 @@ def tela_lista(page, navegar, titulo, subtitulo, titulos, buscar,
         erro_banco = mensagem_amigavel(erro)
 
     controles = [
-        cabecalho(titulo, subtitulo, Sino(page, navegar)),
+        cabecalho(titulo, subtitulo, Sino(navegar)),
         ft.Divider(color=LINHA),
     ]
     if erro_banco:

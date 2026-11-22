@@ -2,15 +2,17 @@
 import flet as ft
 
 from componentes.alertas_ui import Sino
-from componentes.ui import (abrir_dialogo, cabecalho, celula, fechar_dialogo,
-                            painel, rolar_ao_topo, titulo_coluna)
+from componentes.seletor_categoria import SeletorCategoria
+from componentes.ui import (abrir_dialogo, botao, cabecalho, celula,
+                            fechar_dialogo, painel, titulo_coluna)
 from funcoes.alertas import invalidar_cache
 from funcoes.produto import (atualizar_produto, buscar_produto,
                              deletar_produto, inserir_produto,
                              listar_produtos)
-from tema import AZUL, AZUL_ESCURO, BRANCO, LINHA, TEXTO_SUAVE, VERDE, VERMELHO
+from tema import BRANCO, LINHA, PRETO, TEXTO_SUAVE, VERDE, VERMELHO
 from utils.datas import data_para_campo, formatar_data
 from utils.erros import ErroValidacao, mensagem_amigavel, registrar_erro
+from utils.mascaras import mascara_data, somente_digitos
 from utils.validacao import validar_produto
 
 # (chave, rótulo, largura). A chave é a mesma usada no banco e na validação.
@@ -29,40 +31,47 @@ CAMPOS = [
     ("lote", "Lote", 160),
     ("localizacao", "Localização", 200),
 ]
-
-# Campos do dicionário devolvido por buscar_produto() que não têm o mesmo
-# nome do campo da tela.
-COLUNA_DO_CAMPO = {"quantidade": "quantidade_atual"}
 CAMPOS_DE_DATA = ("data_entrega", "data_validade")
-CAMPOS_DE_PRECO = ("preco_custo", "preco_venda")
 
 
-def _texto_do_banco(chave, produto):
-    """Converte um valor vindo do banco no texto que vai para o campo da tela."""
-    valor = produto.get(COLUNA_DO_CAMPO.get(chave, chave))
-    if valor is None:
-        return ""
-    if chave in CAMPOS_DE_DATA:
-        return data_para_campo(valor)
-    if chave in CAMPOS_DE_PRECO:
-        return f"{valor:.2f}".replace(".", ",")
-    return str(valor)
+def _textos_do_produto(produto):
+    """Registro vindo do banco -> textos para preencher o formulário."""
+    textos = {chave: "" if valor is None else str(valor)
+              for chave, valor in produto.items()}
+    textos["quantidade"] = textos["quantidade_atual"]
+    for chave in ("preco_custo", "preco_venda"):
+        if produto[chave] is not None:
+            textos[chave] = f"{produto[chave]:.2f}".replace(".", ",")
+    for chave in CAMPOS_DE_DATA:
+        textos[chave] = data_para_campo(produto[chave])
+    return textos
 
 
 def criar_tela(page, navegar):
-    campos = {chave: ft.TextField(label=rotulo, width=largura)
-              for chave, rotulo, largura in CAMPOS}
-    estado = {"id_em_edicao": None}  # None = modo cadastro
-    sino = Sino(page, navegar)
+    sino = Sino(navegar)
+    estado = {"id_em_edicao": None}  # None = cadastrando; número = editando
+    ultimo_valor = {}                # último texto de cada campo (máscara de data)
+
+    # ---------- campos do formulário ----------
+    campos = {}
+    controles_form = []
+    for chave, rotulo, largura in CAMPOS:
+        if chave == "categoria":
+            seletor = SeletorCategoria(
+                page, lambda t: (avisar(t, erro=True), page.update()),
+                largura=largura)
+            campos[chave] = seletor.campo
+            controles_form.append(seletor.controle)
+        else:
+            campos[chave] = ft.TextField(label=rotulo, width=largura)
+            controles_form.append(campos[chave])
 
     mensagem = ft.Text("", size=13)
-    vazio = ft.Text(
-        "Nenhum produto cadastrado ainda. Preencha o formulário e "
-        "clique em Salvar produto.",
-        color=TEXTO_SUAVE, size=13, visible=False,
-    )
     titulo_form = ft.Text("Novo produto", size=16,
-                          weight=ft.FontWeight.BOLD, color=AZUL_ESCURO)
+                          weight=ft.FontWeight.BOLD, color=PRETO)
+    vazio = ft.Text("Nenhum produto cadastrado ainda. Preencha o formulário "
+                    "e clique em Salvar produto.",
+                    color=TEXTO_SUAVE, size=13, visible=False)
     tabela = ft.DataTable(
         columns=[titulo_coluna(t) for t in
                  ["ID", "Produto", "Categoria", "Validade", "Quantidade",
@@ -71,8 +80,7 @@ def criar_tela(page, navegar):
         column_spacing=28,
     )
 
-    # ---------- mensagens e modos do formulário ----------
-
+    # ---------- mensagens e formulário ----------
     def avisar(texto, erro=False):
         mensagem.value = texto
         mensagem.color = VERMELHO if erro else VERDE
@@ -84,33 +92,38 @@ def criar_tela(page, navegar):
         avisar(mensagem_amigavel(erro), erro=True)
         page.update()
 
+    def definir(chave, texto):
+        campos[chave].value = texto
+        ultimo_valor[chave] = texto
+
+    def voltar_ao_cadastro():
+        """Limpa o formulário e volta ao modo 'Novo produto'."""
+        for chave in campos:
+            definir(chave, "")
+        estado["id_em_edicao"] = None
+        titulo_form.value = "Novo produto"
+
     def atualizar_alertas():
         """Os dados mudaram: refaz a contagem do sino do cabeçalho."""
         invalidar_cache()
         sino.atualizar()
 
-    def limpar_campos():
-        for campo in campos.values():
-            campo.value = ""
+    def ao_digitar_data(chave):
+        def tratar(e):
+            definir(chave, mascara_data(campos[chave].value,
+                                        ultimo_valor.get(chave, "")))
+            page.update()
+        return tratar
 
-    def modo_cadastro():
-        estado["id_em_edicao"] = None
-        titulo_form.value = "Novo produto"
-        btn_salvar.visible = True
-        btn_limpar.visible = True
-        btn_atualizar.visible = False
-        btn_cancelar.visible = False
+    def ao_digitar_codigo(e):
+        definir("codigo_barras", somente_digitos(campos["codigo_barras"].value, 14))
+        page.update()
 
-    def modo_edicao(id_produto):
-        estado["id_em_edicao"] = id_produto
-        titulo_form.value = f"Editar produto (ID {id_produto})"
-        btn_salvar.visible = False
-        btn_limpar.visible = False
-        btn_atualizar.visible = True
-        btn_cancelar.visible = True
+    for chave in CAMPOS_DE_DATA:
+        campos[chave].on_change = ao_digitar_data(chave)
+    campos["codigo_barras"].on_change = ao_digitar_codigo
 
     # ---------- tabela ----------
-
     def carregar_tabela():
         try:
             produtos = listar_produtos()
@@ -121,22 +134,18 @@ def criar_tela(page, navegar):
             avisar(mensagem_amigavel(erro), erro=True)
             return
 
-        def botoes(p):
+        def acoes(p):
             return ft.Row(
                 controls=[
                     ft.IconButton(
-                        icon=ft.Icons.EDIT_OUTLINED,
-                        icon_color=AZUL,
+                        icon=ft.Icons.EDIT_OUTLINED, icon_color=PRETO,
                         tooltip="Editar produto",
-                        on_click=lambda e, i=p["id_produto"]: editar(i),
-                    ),
+                        on_click=lambda e, i=p["id_produto"]: editar(i)),
                     ft.IconButton(
-                        icon=ft.Icons.DELETE_OUTLINE,
-                        icon_color=VERMELHO,
+                        icon=ft.Icons.DELETE_OUTLINE, icon_color=VERMELHO,
                         tooltip="Excluir produto",
                         on_click=lambda e, i=p["id_produto"], n=p["nome"]:
-                            pedir_exclusao(i, n),
-                    ),
+                            pedir_exclusao(i, n)),
                 ],
                 spacing=0,
             )
@@ -149,28 +158,29 @@ def criar_tela(page, navegar):
                 celula(formatar_data(p["data_validade"])),
                 celula(p["quantidade_atual"]),
                 celula(p["localizacao"] or "-"),
-                celula(botoes(p)),
+                celula(acoes(p)),
             ])
             for p in produtos
         ]
         vazio.visible = not produtos
 
     # ---------- ações ----------
-
-    def coletar_dados():
-        valores = {chave: (campo.value or "").strip()
-                   for chave, campo in campos.items()}
-        return validar_produto(valores)
-
     def salvar(e):
+        """Cadastra um produto novo ou atualiza o que está em edição."""
+        id_produto = estado["id_em_edicao"]
         try:
-            dados = coletar_dados()
-            inserir_produto(**dados)
+            dados = validar_produto({chave: (campo.value or "").strip()
+                                     for chave, campo in campos.items()})
+            if id_produto:
+                atualizar_produto(id_produto, dados)
+            else:
+                inserir_produto(dados)
         except Exception as erro:
             tratar_erro(erro, "salvar produto")
             return
-        limpar_campos()
-        avisar(f"Produto '{dados['nome']}' salvo com sucesso.")
+        voltar_ao_cadastro()
+        avisar(f"Produto '{dados['nome']}' "
+               f"{'atualizado' if id_produto else 'salvo'} com sucesso.")
         atualizar_alertas()
         carregar_tabela()
         page.update()
@@ -187,40 +197,17 @@ def criar_tela(page, navegar):
             carregar_tabela()
             page.update()
             return
-        for chave, campo in campos.items():
-            campo.value = _texto_do_banco(chave, produto)
-        modo_edicao(id_produto)
-        avisar("")
-        page.update()
-        rolar_ao_topo(page, coluna_principal)
-
-    def atualizar(e):
-        id_produto = estado["id_em_edicao"]
-        try:
-            dados = coletar_dados()
-            encontrado = atualizar_produto(id_produto, **dados)
-        except Exception as erro:
-            tratar_erro(erro, f"atualizar produto {id_produto}")
-            return
-        if not encontrado:
-            avisar("Esse produto não existe mais; nada foi alterado.",
-                   erro=True)
-        else:
-            avisar(f"Produto '{dados['nome']}' atualizado com sucesso.")
-        limpar_campos()
-        modo_cadastro()
-        atualizar_alertas()
-        carregar_tabela()
-        page.update()
-
-    def cancelar_edicao(e):
-        limpar_campos()
-        modo_cadastro()
+        textos = _textos_do_produto(produto)
+        for chave in campos:
+            definir(chave, textos.get(chave, ""))
+        estado["id_em_edicao"] = id_produto
+        titulo_form.value = f"Editar produto (ID {id_produto})"
         avisar("")
         page.update()
 
     def limpar(e):
-        limpar_campos()
+        """Limpa os campos (se estava editando, cancela a edição)."""
+        voltar_ao_cadastro()
         avisar("")
         page.update()
 
@@ -233,8 +220,7 @@ def criar_tela(page, navegar):
                 tratar_erro(erro, f"excluir produto {id_produto}")
                 return
             if estado["id_em_edicao"] == id_produto:
-                limpar_campos()
-                modo_cadastro()
+                voltar_ao_cadastro()
             if apagados:
                 avisar(f"Produto '{nome}' excluído.")
             else:
@@ -243,41 +229,23 @@ def criar_tela(page, navegar):
             carregar_tabela()
             page.update()
 
-        def cancelar(e):
-            fechar_dialogo(page, dialogo)
-
         dialogo = ft.AlertDialog(
             modal=True,
             title=ft.Text("Excluir produto"),
-            content=ft.Text(
-                f"Deseja excluir '{nome}'? O estoque desse produto "
-                "também será apagado."),
+            content=ft.Text(f"Deseja excluir '{nome}'? O estoque desse "
+                            "produto também será apagado."),
             actions=[
-                ft.TextButton("Cancelar", on_click=cancelar),
-                ft.Button(
-                    "Excluir produto",
-                    on_click=confirmar,
-                    style=ft.ButtonStyle(bgcolor=VERMELHO, color=BRANCO),
-                ),
+                ft.TextButton("Cancelar",
+                              on_click=lambda e: fechar_dialogo(page, dialogo)),
+                botao("Excluir produto", confirmar, cor=VERMELHO),
             ],
         )
         abrir_dialogo(page, dialogo)
 
-    # ---------- botões (criados depois das funções que eles chamam) ----------
-
-    btn_salvar = ft.Button(
-        "Salvar produto", icon=ft.Icons.SAVE_OUTLINED, on_click=salvar,
-        style=ft.ButtonStyle(bgcolor=AZUL, color=BRANCO))
-    btn_limpar = ft.OutlinedButton("Limpar campos", on_click=limpar)
-    btn_atualizar = ft.Button(
-        "Salvar alterações", icon=ft.Icons.CHECK, on_click=atualizar,
-        style=ft.ButtonStyle(bgcolor=AZUL, color=BRANCO), visible=False)
-    btn_cancelar = ft.OutlinedButton(
-        "Cancelar edição", on_click=cancelar_edicao, visible=False)
-
+    # ---------- montagem da tela ----------
     carregar_tabela()
 
-    coluna_principal = ft.Column(
+    return ft.Column(
         controls=[
             cabecalho("Produtos",
                       "Cadastre, consulte, edite e exclua os produtos do "
@@ -288,20 +256,20 @@ def criar_tela(page, navegar):
                 content=ft.Column(
                     controls=[
                         titulo_form,
-                        ft.Row(controls=list(campos.values()),
-                               wrap=True, spacing=12, run_spacing=12),
-                        ft.Row(
-                            controls=[btn_salvar, btn_limpar,
-                                      btn_atualizar, btn_cancelar],
-                            spacing=10,
-                        ),
+                        ft.Row(controls=controles_form, wrap=True,
+                               spacing=12, run_spacing=12),
+                        ft.Row(controls=[
+                            botao("Salvar produto", salvar,
+                                  icon=ft.Icons.SAVE_OUTLINED),
+                            ft.OutlinedButton("Limpar campos", on_click=limpar),
+                        ], spacing=10),
                         mensagem,
                     ],
                     spacing=14,
                 ),
             ),
             ft.Text("Produtos cadastrados", size=18,
-                    weight=ft.FontWeight.BOLD, color=AZUL_ESCURO),
+                    weight=ft.FontWeight.BOLD, color=PRETO),
             painel(tabela),
             vazio,
         ],
@@ -309,4 +277,3 @@ def criar_tela(page, navegar):
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
-    return coluna_principal
